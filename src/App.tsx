@@ -4,7 +4,7 @@ import PositionBar from './components/PositionBar'
 import ActionButtons from './components/ActionButtons'
 import RangeGrid from './components/RangeGrid'
 import BoardPicker from './components/BoardPicker'
-import CategoryGrid from './components/CategoryGrid'
+import PostflopActionGrid from './components/PostflopActionGrid'
 import { computeFlow, type Committed, type DecisionSlot } from './engine/preflop'
 import { getDisplayCell } from './engine/chart'
 import { buildRangeWithCategories, aggregatePostflopAction, type PostflopAction } from './engine/postflop'
@@ -253,7 +253,7 @@ export default function App() {
               </div>
             )}
 
-            <CategoryGrid entries={rangeEntries} />
+            <PostflopActionGrid entries={rangeEntries} />
           </div>
         )}
 

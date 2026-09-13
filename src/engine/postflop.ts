@@ -47,24 +47,10 @@ export function buildRangeWithCategories(preflopWeights: Record<string, number>,
   return entries
 }
 
-export interface CategorySummary {
-  category: HandCategory
-  combos: number
-  pct: number
-}
-
-export function summarizeCategories(entries: HandRangeEntry[]): CategorySummary[] {
-  const totals = new Map<HandCategory, number>()
-  let totalCombos = 0
-  for (const e of entries) {
-    if (!e.category) continue
-    const combos = (e.combos * e.weight) / 100
-    totals.set(e.category, (totals.get(e.category) ?? 0) + combos)
-    totalCombos += combos
-  }
-  return [...totals.entries()]
-    .map(([category, combos]) => ({ category, combos, pct: totalCombos > 0 ? (combos / totalCombos) * 100 : 0 }))
-    .sort((a, b) => b.combos - a.combos)
+/** Per-hand action-frequency split (0-100 each, sums to 100) for rendering an action-colored grid cell. */
+export function handActionDistribution(entry: HandRangeEntry): Record<PostflopAction, number> {
+  if (!entry.category) return { check: 0, 'bet-small': 0, 'bet-big': 0 }
+  return HEURISTIC[entry.category]
 }
 
 export function aggregatePostflopAction(entries: HandRangeEntry[]): Record<PostflopAction, number> {

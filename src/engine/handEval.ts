@@ -9,20 +9,6 @@ export const HAND_CATEGORIES = [
 ] as const
 export type HandCategory = (typeof HAND_CATEGORIES)[number]
 
-export const CATEGORY_LABEL: Record<HandCategory, string> = {
-  'straight-flush': '스트레이트 플러시', quads: '포카드', 'full-house': '풀하우스', flush: '플러시', straight: '스트레이트',
-  set: '셋', trips: '트립스', 'two-pair': '투페어', overpair: '오버페어', 'top-pair': '탑페어', 'second-pair': '세컨페어',
-  'low-pair': '로우페어', underpair: '언더페어', 'flush-draw': '플러시드로우', oesd: '오픈드로우', gutshot: '거트샷',
-  overcards: '오버카드', air: '에어',
-}
-
-export const CATEGORY_COLOR: Record<HandCategory, string> = {
-  'straight-flush': '#8B5CF6', quads: '#7C3AED', 'full-house': '#6D28D9', flush: '#4F46E5', straight: '#4338CA',
-  set: '#6366F1', trips: '#818CF8', 'two-pair': '#0EA5E9', overpair: '#06B6D4', 'top-pair': '#14B8A6',
-  'second-pair': '#10B981', 'low-pair': '#22C55E', underpair: '#84CC16', 'flush-draw': '#EAB308', oesd: '#F59E0B',
-  gutshot: '#F97316', overcards: '#FB923C', air: '#6B7280',
-}
-
 /** Pick one concrete combo for a 169-grid hand name (e.g. "AKs", "TT", "76o") avoiding board cards. */
 export function representativeCombo(handName: string, board: Card[]): [Card, Card] | null {
   const r1 = handName[0] as Rank
