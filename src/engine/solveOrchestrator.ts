@@ -26,7 +26,8 @@ function runCfrInWorker(req: CfrWorkerRequest): Promise<SolveResult> {
       worker.terminate()
       reject(err)
     }
-    worker.postMessage(req)
+    // Zero-copy transfer of the (potentially large) equity matrix instead of structured-cloning it.
+    worker.postMessage(req, [req.equity.matrix.buffer])
   })
 }
 
