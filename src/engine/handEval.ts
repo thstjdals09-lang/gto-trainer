@@ -27,11 +27,17 @@ export function representativeCombo(handName: string, board: Card[]): [Card, Car
     if (!suit) return null
     return [{ rank: r1, suit }, { rank: r2, suit }]
   }
-  const s1 = SUITS.find((s) => !used(r1, s))
-  if (!s1) return null
-  const s2 = SUITS.find((s) => s !== s1 && !used(r2, s))
-  if (!s2) return null
-  return [{ rank: r1, suit: s1 }, { rank: r2, suit: s2 }]
+  // Offsuit: search all (s1, s2) pairs rather than greedily picking s1 first —
+  // a greedy pick can consume the one suit s2 needed even when another valid
+  // s1 choice would leave a combo available.
+  for (const s1 of SUITS) {
+    if (used(r1, s1)) continue
+    for (const s2 of SUITS) {
+      if (s2 === s1 || used(r2, s2)) continue
+      return [{ rank: r1, suit: s1 }, { rank: r2, suit: s2 }]
+    }
+  }
+  return null
 }
 
 function distinctSortedRanks(cards: Card[]): number[] {
