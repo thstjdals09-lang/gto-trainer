@@ -122,8 +122,11 @@ export function computeActionTotals(chart: Chart, cellMode: 'raw' | 'callfold' |
       const n = comboCount(hand)
       totalCombos += n
       const cell = getDisplayCell(chart, hand.name, cellMode)
+      // hands not in the range at all (weight<100) are fold, PLUS any explicit
+      // fold share within the weighted portion (unlisted hands default to
+      // weight:100/actions:{fold:100}; mixed cells like ['raise','fold'] too).
       combos.fold += (n * (100 - cell.weight)) / 100
-      for (const action of ['call', 'raise', 'allin'] as PokerAction[]) {
+      for (const action of ['fold', 'call', 'raise', 'allin'] as PokerAction[]) {
         combos[action] += (n * cell.weight * (cell.actions[action] ?? 0)) / 10000
       }
     }
