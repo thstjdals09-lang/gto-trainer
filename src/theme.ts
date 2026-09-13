@@ -1,19 +1,12 @@
 import type { PokerAction, Suit } from './types'
-import type { PostflopAction } from './engine/postflop'
 
 export const SUIT_SYMBOL: Record<Suit, string> = { s: '♠', h: '♥', d: '♦', c: '♣' }
 export const SUIT_COLOR: Record<Suit, string> = { s: '#e5e7eb', h: '#f87171', d: '#60a5fa', c: '#4ade80' }
 
-export const POSTFLOP_ACTION_COLOR: Record<PostflopAction, string> = {
+export const POSTFLOP_ACTION_COLOR: Record<'check' | 'bet-small' | 'bet-big', string> = {
   check: '#2b6cb0',
   'bet-small': '#d4a72c',
   'bet-big': '#dc2626',
-}
-
-export const POSTFLOP_ACTION_LABEL: Record<PostflopAction, string> = {
-  check: 'Check',
-  'bet-small': 'Bet 33%',
-  'bet-big': 'Bet 75%+',
 }
 
 export const ACTION_COLOR: Record<PokerAction, string> = {
