@@ -2,21 +2,21 @@ import type { EquityMatrix } from './equity'
 
 export type StreetAction = 'check' | 'bet-small' | 'bet-big' | 'fold' | 'call' | 'raise'
 
-interface DecisionNode {
+export interface DecisionNode {
   kind: 'decision'
   id: string
   actor: 'oop' | 'ip'
   actions: StreetAction[]
   children: Partial<Record<StreetAction, TreeNode>>
 }
-interface TerminalNode {
+export interface TerminalNode {
   kind: 'terminal'
   type: 'fold' | 'showdown'
   foldedPlayer?: 'oop' | 'ip'
   oopInvested: number
   ipInvested: number
 }
-type TreeNode = DecisionNode | TerminalNode
+export type TreeNode = DecisionNode | TerminalNode
 
 export interface SolverInput {
   heroCombos: number[][] // OOP

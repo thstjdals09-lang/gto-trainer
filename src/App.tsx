@@ -8,7 +8,8 @@ import SolvedActionGrid from './components/SolvedActionGrid'
 import HandDetailPanel from './components/HandDetailPanel'
 import { computeFlow, type Committed, type DecisionSlot } from './engine/preflop'
 import { getDisplayCell } from './engine/chart'
-import { preflopEndState, advanceStreet, type StreetState } from './engine/potTracking'
+import { preflopEndState, nextStreetState, type StreetState } from './engine/potTracking'
+import { computeStreetFlow, type StreetCommitted, type StreetFlowResult } from './engine/postflopFlow'
 import { solveStreet, type StreetSolve } from './engine/solveOrchestrator'
 import { aggregateStrategyToGrid, aggregateGridTotals } from './engine/solverBridge'
 import type { SolveProgress } from './engine/equitySolverPool'
@@ -16,12 +17,23 @@ import type { StreetAction } from './engine/postflopSolver'
 import { generateHandGrid, POSITIONS, type Card, type PokerAction, type StackDepth } from './types'
 
 const SCENARIO_LABEL: Record<string, string> = { RFI: 'RFI (오픈)', 'vs-open': 'vs Open', 'vs-3bet': 'vs 3Bet', 'vs-4bet': 'vs 4Bet' }
-const POSTFLOP_LABEL: Partial<Record<StreetAction, string>> = { check: 'Check', 'bet-small': 'Bet 33%', 'bet-big': 'Bet 75%+' }
-const POSTFLOP_COLOR: Partial<Record<StreetAction, string>> = {
+const POSTFLOP_LABEL: Record<StreetAction, string> = {
+  check: 'Check',
+  'bet-small': 'Bet 33%',
+  'bet-big': 'Bet 75%+',
+  fold: 'Fold',
+  call: 'Call',
+  raise: 'Raise (All-in)',
+}
+const POSTFLOP_COLOR: Record<StreetAction, string> = {
   check: 'bg-sky-600 hover:bg-sky-500',
   'bet-small': 'bg-amber-500 hover:bg-amber-400 text-black',
   'bet-big': 'bg-red-600 hover:bg-red-500',
+  fold: 'bg-blue-700 hover:bg-blue-600',
+  call: 'bg-amber-500 hover:bg-amber-400 text-black',
+  raise: 'bg-red-800 hover:bg-red-700',
 }
+const STREET_LABEL: Record<'flop' | 'turn' | 'river', string> = { flop: '플랍', turn: '턴', river: '리버' }
 const SOLVE_ITERATIONS = 300
 
 const allHandNames = generateHandGrid().flatMap((row) => row.map((h) => h.name))
@@ -33,8 +45,11 @@ export default function App() {
   const [flopPick, setFlopPick] = useState<Card[]>([])
   const [turnPick, setTurnPick] = useState<Card[]>([])
   const [riverPick, setRiverPick] = useState<Card[]>([])
-  const [postflopActions, setPostflopActions] = useState<Partial<Record<'flop' | 'turn' | 'river', 'check' | 'bet-small' | 'bet-big'>>>({})
-  const [viewSeat, setViewSeat] = useState<0 | 1>(0)
+  const [streetCommitted, setStreetCommitted] = useState<Record<'flop' | 'turn' | 'river', StreetCommitted>>({
+    flop: {},
+    turn: {},
+    river: {},
+  })
   const [activeHand, setActiveHand] = useState<string | null>(null)
   const [solveResult, setSolveResult] = useState<StreetSolve | null>(null)
   const [solveStatus, setSolveStatus] = useState<'idle' | 'solving' | 'done' | 'error'>('idle')
@@ -55,33 +70,61 @@ export default function App() {
   const rangeB = reachedFlop ? continuingRangeForSeat(seatB) : {}
 
   const flopDone = flopPick.length === 3
-  const flopActed = !!postflopActions.flop
   const turnDone = turnPick.length === 1
-  const turnActed = !!postflopActions.turn
   const riverDone = riverPick.length === 1
-  const riverActed = !!postflopActions.river
+  const currentBoardForDisplay = [...flopPick, ...turnPick, ...riverPick]
+
+  // Each street is walked node-by-node (both OOP and IP act in turn, same tree the CFR solve
+  // ran on) instead of ending the street after a single click — see engine/postflopFlow.ts.
+  const flopEntry: StreetState =
+    reachedFlop && stack ? preflopEndState(seatA, seatB, flow!.status === 'complete' ? flow!.history : [], stack) : { potBB: 0, effStackBB: 0 }
+  const flopFlow: StreetFlowResult | null =
+    reachedFlop && flopDone ? computeStreetFlow(flopEntry.potBB, flopEntry.effStackBB, streetCommitted.flop) : null
+
+  const flopShowdown = flopFlow?.status === 'complete' && flopFlow.type === 'showdown' ? flopFlow : null
+  const turnEntry: StreetState = flopShowdown ? nextStreetState(flopEntry, flopShowdown.oopInvested, flopShowdown.ipInvested) : flopEntry
+  const turnFlow: StreetFlowResult | null =
+    flopShowdown && turnDone ? computeStreetFlow(turnEntry.potBB, turnEntry.effStackBB, streetCommitted.turn) : null
+
+  const turnShowdown = turnFlow?.status === 'complete' && turnFlow.type === 'showdown' ? turnFlow : null
+  const riverEntry: StreetState = turnShowdown ? nextStreetState(turnEntry, turnShowdown.oopInvested, turnShowdown.ipInvested) : turnEntry
+  const riverFlow: StreetFlowResult | null =
+    turnShowdown && riverDone ? computeStreetFlow(riverEntry.potBB, riverEntry.effStackBB, streetCommitted.river) : null
 
   let street: 'flop' | 'turn' | 'river' | 'done' = 'flop'
-  if (!flopDone || !flopActed) street = 'flop'
-  else if (!turnDone || !turnActed) street = 'turn'
-  else if (!riverDone || !riverActed) street = 'river'
-  else street = 'done'
+  let postflopFold: { street: 'flop' | 'turn' | 'river'; folder: 'oop' | 'ip' } | null = null
 
-  const currentBoardForDisplay = [...flopPick, ...turnPick, ...riverPick]
+  if (!flopDone || !flopFlow || flopFlow.status === 'awaiting') {
+    street = 'flop'
+  } else if (flopFlow.type === 'fold') {
+    street = 'done'
+    postflopFold = { street: 'flop', folder: flopFlow.foldedPlayer! }
+  } else if (!turnDone || !turnFlow || turnFlow.status === 'awaiting') {
+    street = 'turn'
+  } else if (turnFlow.type === 'fold') {
+    street = 'done'
+    postflopFold = { street: 'turn', folder: turnFlow.foldedPlayer! }
+  } else if (!riverDone || !riverFlow || riverFlow.status === 'awaiting') {
+    street = 'river'
+  } else if (riverFlow.type === 'fold') {
+    street = 'done'
+    postflopFold = { street: 'river', folder: riverFlow.foldedPlayer! }
+  } else {
+    street = 'done'
+  }
+
   const streetReady =
     reachedFlop && ((street === 'flop' && flopDone) || (street === 'turn' && turnDone) || (street === 'river' && riverDone))
 
-  let streetState: StreetState = { potBB: 0, effStackBB: 0 }
-  if (reachedFlop && stack) {
-    streetState = preflopEndState(seatA, seatB, flow!.status === 'complete' ? flow!.history : [], stack)
-    if (postflopActions.flop) streetState = advanceStreet(streetState, postflopActions.flop)
-    if (postflopActions.turn) streetState = advanceStreet(streetState, postflopActions.turn)
-  }
+  const streetState: StreetState = street === 'turn' ? turnEntry : street === 'river' || street === 'done' ? riverEntry : flopEntry
+  const currentStreetFlow: StreetFlowResult | null =
+    street === 'flop' ? flopFlow : street === 'turn' ? turnFlow : street === 'river' ? riverFlow : null
 
   const boardKey = currentBoardForDisplay.map((c) => c.rank + c.suit).join(',')
-  const solveKey = streetReady
-    ? `${street}|${seatA}|${seatB}|${boardKey}|${JSON.stringify(rangeA)}|${JSON.stringify(rangeB)}|${streetState.potBB.toFixed(2)}|${streetState.effStackBB.toFixed(2)}`
-    : null
+  const solveKey =
+    streetReady && street !== 'done'
+      ? `${street}|${seatA}|${seatB}|${boardKey}|${JSON.stringify(rangeA)}|${JSON.stringify(rangeB)}|${streetState.potBB.toFixed(2)}|${streetState.effStackBB.toFixed(2)}`
+      : null
 
   useEffect(() => {
     if (!solveKey || solveKey === solvedKey) return
@@ -118,8 +161,7 @@ export default function App() {
     setFlopPick([])
     setTurnPick([])
     setRiverPick([])
-    setPostflopActions({})
-    setViewSeat(0)
+    setStreetCommitted({ flop: {}, turn: {}, river: {} })
     setSolveResult(null)
     setSolveStatus('idle')
     setSolveProgress(null)
@@ -129,6 +171,10 @@ export default function App() {
   function handleAction(slot: DecisionSlot, action: PokerAction, sizeBB?: number) {
     setSlotLog((prev) => ({ ...prev, [slot.id]: slot }))
     setCommitted((prev) => ({ ...prev, [slot.id]: { action, sizeBB } }))
+  }
+
+  function handleStreetAction(streetName: 'flop' | 'turn' | 'river', nodeId: string, action: StreetAction) {
+    setStreetCommitted((prev) => ({ ...prev, [streetName]: { ...prev[streetName], [nodeId]: action } }))
   }
 
   /** Clicking a position tile jumps straight to it: seats skipped forward auto-fold, seats before it get reopened for editing. */
@@ -234,23 +280,25 @@ export default function App() {
 
   // Postflop
   if (reachedFlop) {
-    const activeSeat = viewSeat === 0 ? seatA : seatB
-    const isViewingOOP = activeSeat === seatA
+    const awaitingFlow = currentStreetFlow?.status === 'awaiting' ? currentStreetFlow : null
+    const isViewingOOP = awaitingFlow?.actor === 'oop'
+    const activeSeat = isViewingOOP ? seatA : seatB
 
     const needFlop = 3 - flopPick.length
-    const needTurn = flopActed ? 1 - turnPick.length : 0
-    const needRiver = flopActed && turnActed ? 1 - riverPick.length : 0
+    const needTurn = flopShowdown ? 1 - turnPick.length : 0
+    const needRiver = turnShowdown ? 1 - riverPick.length : 0
 
     const usedForFlop: Card[] = []
     const usedForTurn = flopPick
     const usedForRiver = [...flopPick, ...turnPick]
 
     const thisSolveIsCurrent = solveResult && solvedKey === solveKey
-    const primaryStrategy = thisSolveIsCurrent
-      ? isViewingOOP
-        ? solveResult!.result.oopStrategy.get('root')
-        : solveResult!.result.ipStrategy.get('root-x')
-      : undefined
+    const primaryStrategy =
+      thisSolveIsCurrent && awaitingFlow
+        ? isViewingOOP
+          ? solveResult!.result.oopStrategy.get(awaitingFlow.nodeId)
+          : solveResult!.result.ipStrategy.get(awaitingFlow.nodeId)
+        : undefined
     const primaryWeights = isViewingOOP ? solveResult?.oopWeights : solveResult?.ipWeights
     const primaryHandNames = isViewingOOP ? solveResult?.oopHandNames : solveResult?.ipHandNames
     const solvedGrid =
@@ -258,7 +306,14 @@ export default function App() {
         ? aggregateStrategyToGrid(primaryHandNames, primaryWeights, primaryStrategy)
         : null
     const solvedTotals = solvedGrid ? aggregateGridTotals(solvedGrid) : null
-    const availableActions = primaryStrategy?.actions ?? (['check', 'bet-small', 'bet-big'] as const)
+    const availableActions = awaitingFlow?.actions ?? []
+
+    const finalPot =
+      postflopFold
+        ? undefined
+        : riverFlow?.status === 'complete' && riverFlow.type === 'showdown'
+          ? nextStreetState(riverEntry, riverFlow.oopInvested, riverFlow.ipInvested).potBB
+          : riverEntry.potBB
 
     return (
       <div className="mx-auto max-w-3xl px-3 py-6 flex flex-col gap-4">
@@ -285,40 +340,26 @@ export default function App() {
           </div>
         )}
 
-        {street === 'turn' && !turnDone && flopActed && (
+        {street === 'turn' && !turnDone && flopShowdown && (
           <div className="rounded-xl border border-white/10 bg-white/5 p-4">
             <h3 className="text-white font-semibold mb-2">턴 카드 선택 ({needTurn}장 더)</h3>
             <BoardPicker usedCards={usedForTurn} need={1} picked={turnPick} onChange={setTurnPick} />
           </div>
         )}
 
-        {street === 'river' && !riverDone && turnActed && (
+        {street === 'river' && !riverDone && turnShowdown && (
           <div className="rounded-xl border border-white/10 bg-white/5 p-4">
             <h3 className="text-white font-semibold mb-2">리버 카드 선택 ({needRiver}장 더)</h3>
             <BoardPicker usedCards={usedForRiver} need={1} picked={riverPick} onChange={setRiverPick} />
           </div>
         )}
 
-        {((street === 'flop' && flopDone) || (street === 'turn' && turnDone) || (street === 'river' && riverDone)) && (
+        {awaitingFlow && ((street === 'flop' && flopDone) || (street === 'turn' && turnDone) || (street === 'river' && riverDone)) && (
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-white font-semibold">
-                {street === 'flop' ? '플랍' : street === 'turn' ? '턴' : '리버'} 액션 — {POSITIONS[activeSeat]}의 컨티뉴잉 레인지
+                {STREET_LABEL[street]} 액션 — <span className="text-violet-400">{POSITIONS[activeSeat]}</span> 차례 ({isViewingOOP ? 'OOP' : 'IP'})
               </h3>
-              <div className="flex gap-1 text-xs">
-                <button
-                  onClick={() => setViewSeat(0)}
-                  className={`px-2 py-1 rounded ${viewSeat === 0 ? 'bg-violet-600 text-white' : 'bg-white/10 text-white/60'}`}
-                >
-                  {POSITIONS[seatA]}
-                </button>
-                <button
-                  onClick={() => setViewSeat(1)}
-                  className={`px-2 py-1 rounded ${viewSeat === 1 ? 'bg-violet-600 text-white' : 'bg-white/10 text-white/60'}`}
-                >
-                  {POSITIONS[seatB]}
-                </button>
-              </div>
             </div>
 
             <div className="text-xs text-white/40">
@@ -341,39 +382,49 @@ export default function App() {
             {solveStatus === 'error' && <div className="text-sm text-red-400">솔빙 실패 — 다시 시도해주세요.</div>}
 
             <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
-              {availableActions
-                .filter((a): a is 'check' | 'bet-small' | 'bet-big' => a === 'check' || a === 'bet-small' || a === 'bet-big')
-                .map((a) => {
-                  const stat = solvedTotals?.[a]
-                  return (
-                    <button
-                      key={a}
-                      disabled={!solvedGrid}
-                      onClick={() => setPostflopActions((prev) => ({ ...prev, [street]: a }))}
-                      className={`sm:flex-1 sm:min-w-[110px] rounded-lg px-3 py-3 text-left text-white transition-colors disabled:opacity-40 ${POSTFLOP_COLOR[a]} ${
-                        postflopActions[street] === a ? 'ring-2 ring-white' : ''
-                      }`}
-                    >
-                      <div className="text-sm font-bold">{POSTFLOP_LABEL[a]}</div>
-                      <div className="mt-2 flex items-end justify-between gap-2">
-                        <span className="text-lg font-extrabold">{stat ? stat.pct.toFixed(1) : '—'}%</span>
-                        <span className="text-[10px] text-white/70">{stat ? `${stat.combos.toFixed(0)} combos` : ''}</span>
-                      </div>
-                    </button>
-                  )
-                })}
+              {availableActions.map((a) => {
+                const stat = solvedTotals?.[a]
+                return (
+                  <button
+                    key={a}
+                    disabled={!solvedGrid}
+                    onClick={() => handleStreetAction(street, awaitingFlow.nodeId, a)}
+                    className={`sm:flex-1 sm:min-w-[110px] rounded-lg px-3 py-3 text-left text-white transition-colors disabled:opacity-40 ${POSTFLOP_COLOR[a]}`}
+                  >
+                    <div className="text-sm font-bold">{POSTFLOP_LABEL[a]}</div>
+                    <div className="mt-2 flex items-end justify-between gap-2">
+                      <span className="text-lg font-extrabold">{stat ? stat.pct.toFixed(1) : '—'}%</span>
+                      <span className="text-[10px] text-white/70">{stat ? `${stat.combos.toFixed(0)} combos` : ''}</span>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
 
             {solvedGrid && <SolvedActionGrid grid={solvedGrid} />}
           </div>
         )}
 
-        {street === 'done' && (
+        {street === 'done' && postflopFold && (
           <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center">
-            <div className="text-lg font-semibold text-white mb-2">핸드 완료</div>
+            <div className="text-lg font-semibold text-white mb-2">핸드 종료</div>
+            <div className="text-white/60 text-sm">
+              {STREET_LABEL[postflopFold.street]}에서 {POSITIONS[postflopFold.folder === 'oop' ? seatA : seatB]}가 폴드 —{' '}
+              {POSITIONS[postflopFold.folder === 'oop' ? seatB : seatA]} 승리
+            </div>
+            <button onClick={reset} className="mt-4 rounded-lg bg-violet-600 hover:bg-violet-500 px-6 py-3 font-semibold text-white">
+              새 핸드
+            </button>
+          </div>
+        )}
+
+        {street === 'done' && !postflopFold && (
+          <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center">
+            <div className="text-lg font-semibold text-white mb-2">핸드 완료 (쇼다운)</div>
             <div className="text-white/60 text-sm">
               보드: {currentBoardForDisplay.map((c) => `${c.rank}${c.suit}`).join(' ')}
             </div>
+            {finalPot !== undefined && <div className="text-white/60 text-sm mt-1">최종 팟: {finalPot.toFixed(1)}bb</div>}
             <button onClick={reset} className="mt-4 rounded-lg bg-violet-600 hover:bg-violet-500 px-6 py-3 font-semibold text-white">
               새 핸드
             </button>
