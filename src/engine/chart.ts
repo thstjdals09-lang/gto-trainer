@@ -1,5 +1,5 @@
 import { rawCharts } from '../data/chartData'
-import { normalizeCell, type Chart, type Position, type RawCell, type Scenario, type WeightedCell } from '../types'
+import { comboCount, generateHandGrid, normalizeCell, type Chart, type Position, type PokerAction, type RawCell, type Scenario, type WeightedCell } from '../types'
 
 function chartKey(hero: Position, scenario: Scenario, villain?: Position): string {
   return villain ? `${hero}-${scenario}-${villain}` : `${hero}-${scenario}`
@@ -73,6 +73,35 @@ export function getDisplayCell(chart: Chart, hand: string, cellMode: 'raw' | 'ca
   if (cellMode === 'callfold') return collapseToCallFold(cell)
   if (cellMode === 'shovefold') return collapseToShoveFold(cell)
   return cell
+}
+
+const grid = generateHandGrid()
+
+export interface ActionTotal {
+  combos: number
+  pct: number
+}
+
+/** Aggregate combo counts / % across all 169 hands for each action in a chart. */
+export function computeActionTotals(chart: Chart, cellMode: 'raw' | 'callfold' | 'shovefold'): Record<PokerAction, ActionTotal> {
+  const combos: Record<PokerAction, number> = { fold: 0, call: 0, raise: 0, allin: 0 }
+  let totalCombos = 0
+  for (const row of grid) {
+    for (const hand of row) {
+      const n = comboCount(hand)
+      totalCombos += n
+      const cell = getDisplayCell(chart, hand.name, cellMode)
+      combos.fold += (n * (100 - cell.weight)) / 100
+      for (const action of ['call', 'raise', 'allin'] as PokerAction[]) {
+        combos[action] += (n * cell.weight * (cell.actions[action] ?? 0)) / 10000
+      }
+    }
+  }
+  const out = {} as Record<PokerAction, ActionTotal>
+  for (const action of ['fold', 'call', 'raise', 'allin'] as PokerAction[]) {
+    out[action] = { combos: combos[action], pct: totalCombos > 0 ? (combos[action] / totalCombos) * 100 : 0 }
+  }
+  return out
 }
 
 export function aggressiveWeight(rawCell: RawCell | undefined): number {

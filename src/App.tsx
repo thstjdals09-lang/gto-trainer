@@ -44,6 +44,30 @@ export default function App() {
     setCommitted((prev) => ({ ...prev, [slot.id]: { action, sizeBB } }))
   }
 
+  /** Clicking a position tile jumps straight to it: seats skipped forward auto-fold, seats before it get reopened for editing. */
+  function handleSelectSeat(seatIndex: number) {
+    if (!flow || flow.status !== 'awaiting' || !flow.slot.id.startsWith('seat-')) return
+    const currentIdx = flow.slot.seatIndex
+    if (seatIndex === currentIdx) return
+
+    if (seatIndex > currentIdx) {
+      setCommitted((prev) => {
+        const next = { ...prev }
+        for (let k = currentIdx; k < seatIndex; k++) next[`seat-${k}`] = { action: 'fold' }
+        return next
+      })
+      return
+    }
+
+    // rewind to an earlier seat: drop its decision and everything after it
+    const keep = (key: string) => {
+      const m = /^seat-(\d+)$/.exec(key)
+      return m ? Number(m[1]) < seatIndex : false
+    }
+    setCommitted((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => keep(k))))
+    setSlotLog((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => keep(k))))
+  }
+
   function continuingRangeForSeat(seatIndex: number): Record<string, number> {
     const relevant = Object.values(slotLog).filter((s) => s.seatIndex === seatIndex)
     if (relevant.length === 0) return {}
@@ -93,7 +117,13 @@ export default function App() {
             초기화
           </button>
         </div>
-        <PositionBar stack={stack} history={flow.history} activeSeatIndex={slot.seatIndex} />
+        <PositionBar
+          stack={stack}
+          history={flow.history}
+          activeSeatIndex={slot.seatIndex}
+          clickable={slot.id.startsWith('seat-')}
+          onSelectSeat={handleSelectSeat}
+        />
         <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex flex-col gap-4">
           <div className="flex items-baseline justify-between flex-wrap gap-2">
             <h2 className="text-lg font-semibold text-white">
