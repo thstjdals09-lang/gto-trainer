@@ -5,6 +5,7 @@ import ActionButtons from './components/ActionButtons'
 import RangeGrid from './components/RangeGrid'
 import BoardPicker from './components/BoardPicker'
 import PostflopActionGrid from './components/PostflopActionGrid'
+import HandDetailPanel from './components/HandDetailPanel'
 import { computeFlow, type Committed, type DecisionSlot } from './engine/preflop'
 import { getDisplayCell } from './engine/chart'
 import { buildRangeWithCategories, aggregatePostflopAction, type PostflopAction } from './engine/postflop'
@@ -25,6 +26,7 @@ export default function App() {
   const [riverPick, setRiverPick] = useState<Card[]>([])
   const [postflopActions, setPostflopActions] = useState<Partial<Record<'flop' | 'turn' | 'river', PostflopAction>>>({})
   const [viewSeat, setViewSeat] = useState<0 | 1>(0)
+  const [activeHand, setActiveHand] = useState<string | null>(null)
 
   const flow = useMemo(() => (stack ? computeFlow(stack, committed) : null), [stack, committed])
 
@@ -110,7 +112,7 @@ export default function App() {
   if (flow && flow.status === 'awaiting') {
     const slot = flow.slot
     return (
-      <div className="mx-auto max-w-3xl px-3 py-6 flex flex-col gap-4">
+      <div className="mx-auto max-w-5xl px-3 py-6 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div className="text-sm text-white/50">유효스택 {stack}bb</div>
           <button onClick={reset} className="text-xs text-white/40 hover:text-white/70 underline">
@@ -132,7 +134,14 @@ export default function App() {
             </h2>
           </div>
           <ActionButtons slot={slot} onAction={(action, sizeBB) => handleAction(slot, action, sizeBB)} />
-          <RangeGrid chart={slot.chart} cellMode={slot.cellMode} />
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="sm:flex-1 sm:min-w-0">
+              <RangeGrid chart={slot.chart} cellMode={slot.cellMode} activeHand={activeHand} onHandActive={setActiveHand} />
+            </div>
+            <div className="sm:w-64 sm:shrink-0">
+              <HandDetailPanel hand={activeHand} chart={slot.chart} cellMode={slot.cellMode} />
+            </div>
+          </div>
         </div>
       </div>
     )

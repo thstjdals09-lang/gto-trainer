@@ -7,11 +7,13 @@ import type { CellMode } from '../engine/preflop'
 interface Props {
   chart: Chart
   cellMode: CellMode
+  activeHand?: string | null
+  onHandActive?: (hand: string) => void
 }
 
 const grid = generateHandGrid()
 
-export default function RangeGrid({ chart, cellMode }: Props) {
+export default function RangeGrid({ chart, cellMode, activeHand, onHandActive }: Props) {
   return (
     <div
       className="grid gap-[2px] w-full select-none"
@@ -31,7 +33,11 @@ export default function RangeGrid({ chart, cellMode }: Props) {
             <div
               key={hand.name}
               title={hand.name}
-              className="relative flex overflow-hidden rounded-[2px] text-[6px] xs:text-[7px] sm:text-[9px] font-medium text-white/90"
+              onMouseEnter={() => onHandActive?.(hand.name)}
+              onClick={() => onHandActive?.(hand.name)}
+              className={`relative flex overflow-hidden rounded-[2px] text-[6px] xs:text-[7px] sm:text-[9px] font-medium text-white/90 cursor-pointer ${
+                activeHand === hand.name ? 'ring-2 ring-white' : ''
+              }`}
               style={{ background: ACTION_COLOR.fold }}
             >
               {segments.map((seg, i) => (

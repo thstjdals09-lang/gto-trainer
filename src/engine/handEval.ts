@@ -9,6 +9,35 @@ export const HAND_CATEGORIES = [
 ] as const
 export type HandCategory = (typeof HAND_CATEGORIES)[number]
 
+/** All concrete card combos for a 169-grid hand name (6 for a pair, 4 suited, 12 offsuit). */
+export function allCombosForHand(handName: string): [Card, Card][] {
+  const r1 = handName[0] as Rank
+  const r2 = handName[1] as Rank
+  const suited = handName.endsWith('s')
+  const isPair = r1 === r2
+  const combos: [Card, Card][] = []
+
+  if (isPair) {
+    for (let i = 0; i < SUITS.length; i++) {
+      for (let j = i + 1; j < SUITS.length; j++) {
+        combos.push([{ rank: r1, suit: SUITS[i] }, { rank: r2, suit: SUITS[j] }])
+      }
+    }
+    return combos
+  }
+  if (suited) {
+    for (const s of SUITS) combos.push([{ rank: r1, suit: s }, { rank: r2, suit: s }])
+    return combos
+  }
+  for (const s1 of SUITS) {
+    for (const s2 of SUITS) {
+      if (s2 === s1) continue
+      combos.push([{ rank: r1, suit: s1 }, { rank: r2, suit: s2 }])
+    }
+  }
+  return combos
+}
+
 /** Pick one concrete combo for a 169-grid hand name (e.g. "AKs", "TT", "76o") avoiding board cards. */
 export function representativeCombo(handName: string, board: Card[]): [Card, Card] | null {
   const r1 = handName[0] as Rank

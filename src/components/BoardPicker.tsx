@@ -1,7 +1,5 @@
 import { RANKS, SUITS, type Card, type Suit } from '../types'
-
-const SUIT_SYMBOL: Record<Suit, string> = { s: '♠', h: '♥', d: '♦', c: '♣' }
-const SUIT_COLOR: Record<Suit, string> = { s: '#e5e7eb', h: '#f87171', d: '#60a5fa', c: '#4ade80' }
+import { SUIT_COLOR, SUIT_SYMBOL } from '../theme'
 
 interface Props {
   usedCards: Card[]
