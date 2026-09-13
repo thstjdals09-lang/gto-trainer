@@ -49,8 +49,16 @@ function fallbackVillainOrder(hero: ChartPosition, villain: ChartPosition): Char
 }
 
 export function getRawChart(hero: Position, scenario: Scenario, villain?: Position): Chart | null {
-  const chartHero = CHART_POSITION_MAP[hero]
+  let chartHero = CHART_POSITION_MAP[hero]
   const chartVillain = villain ? CHART_POSITION_MAP[villain] : undefined
+  // UTG/UTG1/UTG2/MP all clamp to the same "UTG" reference, so a later one of
+  // them facing an earlier one's open collides onto "UTG vs UTG" — a spot
+  // that can't exist in the source data (real UTG never faces an open at
+  // all). Nudge hero one seat later so it's asking a real, answerable
+  // question ("HJ facing UTG's open" instead of "UTG facing UTG's open").
+  if (chartVillain && chartHero === chartVillain) {
+    chartHero = CHART_POSITIONS[Math.min(CHART_POSITIONS.indexOf(chartHero) + 1, CHART_POSITIONS.length - 1)]
+  }
   const direct = rawCharts[chartKey(chartHero, scenario, chartVillain)]
   if (direct) return direct
 
