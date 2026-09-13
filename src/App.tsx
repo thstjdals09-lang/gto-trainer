@@ -140,8 +140,11 @@ export default function App() {
 
   // Postflop
   if (flow && flow.status === 'complete' && flow.result === 'flop') {
-    const seatA = flow.liveSeats[0]
-    const seatB = flow.liveSeats[1] ?? flow.liveSeats[0]
+    // Postflop action always starts at SB (not whoever acted first preflop).
+    const POSTFLOP_ORDER = [7, 8, 0, 1, 2, 3, 4, 5, 6] // SB, BB, UTG, UTG1, UTG2, MP, HJ, CO, BTN
+    const sortedLiveSeats = [...flow.liveSeats].sort((a, b) => POSTFLOP_ORDER.indexOf(a) - POSTFLOP_ORDER.indexOf(b))
+    const seatA = sortedLiveSeats[0]
+    const seatB = sortedLiveSeats[1] ?? sortedLiveSeats[0]
     const rangeA = continuingRangeForSeat(seatA)
     const rangeB = continuingRangeForSeat(seatB)
     const activeSeat = viewSeat === 0 ? seatA : seatB
@@ -265,10 +268,6 @@ export default function App() {
             </button>
           </div>
         )}
-
-        <p className="text-[11px] text-white/30 leading-relaxed">
-          * 플랍 이후 액션 비중은 실제 솔버 계산이 아닌, 보드 텍스처 대비 핸드 카테고리(메이드/드로우/에어) 기반의 참고용 추정치입니다.
-        </p>
       </div>
     )
   }

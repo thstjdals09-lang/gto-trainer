@@ -44,12 +44,16 @@ export function computeFlow(stack: StackDepth, committed: Committed): FlowResult
   const history: HistoryEntry[] = []
   const shoveFoldMode = stack <= SHOVE_FOLD_THRESHOLD
 
-  // Phase A: RFI pass, seats 0..4 (UTG..SB). BB never RFIs.
+  const seatCount = positions.length
+  const bbIdx = seatCount - 1
+  const sbIdx = seatCount - 2
+
+  // Phase A: RFI pass, every seat before SB. BB never RFIs (SB's RFI decision is fold-or-open, no limping modeled).
   let openerIdx = -1
   let openerAction: PokerAction | null = null
   let openerSizeBB = 0
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i <= sbIdx; i++) {
     const slotId = `seat-${i}`
     const position = positions[i]
     const c = committed[slotId]
@@ -84,7 +88,7 @@ export function computeFlow(stack: StackDepth, committed: Committed): FlowResult
 
   if (openerIdx === -1) {
     // everyone folded to the blinds
-    return { status: 'complete', result: 'walk', liveSeats: [5], history }
+    return { status: 'complete', result: 'walk', liveSeats: [bbIdx], history }
   }
 
   // Phase B: vs-open pass for seats after the opener
@@ -94,7 +98,7 @@ export function computeFlow(stack: StackDepth, committed: Committed): FlowResult
   let threebettorAction: PokerAction | null = null
   let threebettorSizeBB = 0
 
-  for (let j = openerIdx + 1; j < 6; j++) {
+  for (let j = openerIdx + 1; j < seatCount; j++) {
     const slotId = `seat-${j}`
     const position = positions[j]
     const c = committed[slotId]
@@ -134,7 +138,7 @@ export function computeFlow(stack: StackDepth, committed: Committed): FlowResult
     threebettorIdx = j
     threebettorAction = c.action
     threebettorSizeBB = c.sizeBB ?? (c.action === 'allin' ? stack : threebetSizeBB(openerSizeBB, positionIsInPosition(position, positions[openerIdx]), stack))
-    for (let k = j + 1; k < 6; k++) {
+    for (let k = j + 1; k < seatCount; k++) {
       if (!committed[`seat-${k}`]) {
         history.push({ slotId: `seat-${k}`, seatIndex: k, position: positions[k], action: 'fold', auto: true })
       }

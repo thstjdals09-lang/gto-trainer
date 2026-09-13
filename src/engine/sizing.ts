@@ -1,8 +1,11 @@
-import type { Position, StackDepth } from '../types'
+import { POSITIONS, type Position, type StackDepth } from '../types'
 
-/** Standard open-raise size in bb by position, 100bb reference (matches common 6-max charts). */
+/** Standard open-raise size in bb by position, 100bb reference (matches common 6-max/9-max tournament charts). */
 const OPEN_SIZE: Record<Position, number> = {
   UTG: 2.5,
+  UTG1: 2.5,
+  UTG2: 2.5,
+  MP: 2.5,
   HJ: 2.5,
   CO: 2.5,
   BTN: 2.5,
@@ -31,6 +34,5 @@ export function fourbetSizeBB(threebetBB: number, stack: StackDepth): number {
 }
 
 export function positionIsInPosition(hero: Position, villain: Position): boolean {
-  const order: Position[] = ['UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB']
-  return order.indexOf(hero) > order.indexOf(villain)
+  return POSITIONS.indexOf(hero) > POSITIONS.indexOf(villain)
 }

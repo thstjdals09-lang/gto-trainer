@@ -1,7 +1,36 @@
 import { rawCharts } from '../data/chartData'
-import { comboCount, generateHandGrid, normalizeCell, type Chart, type Position, type PokerAction, type RawCell, type Scenario, type WeightedCell } from '../types'
+import {
+  CHART_POSITIONS,
+  comboCount,
+  generateHandGrid,
+  normalizeCell,
+  type Chart,
+  type ChartPosition,
+  type Position,
+  type PokerAction,
+  type RawCell,
+  type Scenario,
+  type WeightedCell,
+} from '../types'
 
-function chartKey(hero: Position, scenario: Scenario, villain?: Position): string {
+/**
+ * 9-max seats map onto the 6-max chart pack by counting seats back from the
+ * button — CO/HJ/BTN/SB/BB line up directly; UTG/UTG1/UTG2/MP (no dedicated
+ * data) all clamp to the pack's tightest reference, "UTG".
+ */
+export const CHART_POSITION_MAP: Record<Position, ChartPosition> = {
+  UTG: 'UTG',
+  UTG1: 'UTG',
+  UTG2: 'UTG',
+  MP: 'UTG',
+  HJ: 'HJ',
+  CO: 'CO',
+  BTN: 'BTN',
+  SB: 'SB',
+  BB: 'BB',
+}
+
+function chartKey(hero: ChartPosition, scenario: Scenario, villain?: ChartPosition): string {
   return villain ? `${hero}-${scenario}-${villain}` : `${hero}-${scenario}`
 }
 
@@ -10,8 +39,8 @@ function chartKey(hero: Position, scenario: Scenario, villain?: Position): strin
  * fallback when the exact hero/scenario/villain combo has no chart in the pack
  * (the source data doesn't cover every villain for every hero).
  */
-function fallbackVillainOrder(hero: Position, villain: Position): Position[] {
-  const order: Position[] = ['UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB']
+function fallbackVillainOrder(hero: ChartPosition, villain: ChartPosition): ChartPosition[] {
+  const order = CHART_POSITIONS
   return [...order].sort((a, b) => {
     const da = Math.abs(order.indexOf(a) - order.indexOf(villain))
     const db = Math.abs(order.indexOf(b) - order.indexOf(villain))
@@ -20,12 +49,14 @@ function fallbackVillainOrder(hero: Position, villain: Position): Position[] {
 }
 
 export function getRawChart(hero: Position, scenario: Scenario, villain?: Position): Chart | null {
-  const direct = rawCharts[chartKey(hero, scenario, villain)]
+  const chartHero = CHART_POSITION_MAP[hero]
+  const chartVillain = villain ? CHART_POSITION_MAP[villain] : undefined
+  const direct = rawCharts[chartKey(chartHero, scenario, chartVillain)]
   if (direct) return direct
 
-  if (villain) {
-    for (const candidate of fallbackVillainOrder(hero, villain)) {
-      const found = rawCharts[chartKey(hero, scenario, candidate)]
+  if (chartVillain) {
+    for (const candidate of fallbackVillainOrder(chartHero, chartVillain)) {
+      const found = rawCharts[chartKey(chartHero, scenario, candidate)]
       if (found) return found
     }
   }

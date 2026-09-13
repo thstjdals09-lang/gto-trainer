@@ -9,8 +9,13 @@ export interface Card {
   suit: Suit
 }
 
-export const POSITIONS = ['UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB'] as const
+// 9-max tournament seating. Only UTG/HJ/CO/BTN/SB/BB have dedicated chart data —
+// UTG1/UTG2/MP borrow the nearest chart (see CHART_POSITION_MAP in engine/chart.ts).
+export const POSITIONS = ['UTG', 'UTG1', 'UTG2', 'MP', 'HJ', 'CO', 'BTN', 'SB', 'BB'] as const
 export type Position = (typeof POSITIONS)[number]
+
+export const CHART_POSITIONS = ['UTG', 'HJ', 'CO', 'BTN', 'SB', 'BB'] as const
+export type ChartPosition = (typeof CHART_POSITIONS)[number]
 
 export const STACK_DEPTHS = [10, 20, 30, 50, 100, 200] as const
 export type StackDepth = (typeof STACK_DEPTHS)[number]
