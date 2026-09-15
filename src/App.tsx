@@ -483,7 +483,13 @@ export default function App() {
             {solvedGrid && (
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="sm:flex-1 sm:min-w-0">
-                  <SolvedActionGrid grid={solvedGrid} activeHand={activeHand} onHandActive={setActiveHand} />
+                  <SolvedActionGrid
+                    grid={solvedGrid}
+                    activeHand={activeHand}
+                    onHandActive={setActiveHand}
+                    preflopChart={viewedSeatLastPreflopSlot?.chart}
+                    preflopCellMode={viewedSeatLastPreflopSlot?.cellMode}
+                  />
                 </div>
                 <div className="sm:w-64 sm:shrink-0">
                   <SolvedHandDetailPanel
