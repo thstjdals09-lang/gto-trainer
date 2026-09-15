@@ -2,7 +2,7 @@ import { getDisplayCell } from '../engine/chart'
 import type { CellMode } from '../engine/preflop'
 import type { StreetAction } from '../engine/postflopSolver'
 import type { GridCellStrategy } from '../engine/solverBridge'
-import { ACTION_COLOR, POSTFLOP_ACTION_COLOR } from '../theme'
+import { ACTION_COLOR, STREET_ACTION_COLOR } from '../theme'
 import { generateHandGrid, type Chart, type PokerAction } from '../types'
 
 interface Props {
@@ -16,7 +16,10 @@ interface Props {
 }
 
 const handGrid = generateHandGrid()
-const ORDER: StreetAction[] = ['bet-big', 'bet-small', 'check']
+// Aggressive-to-passive draw order so the "strongest" action reads left-most in each cell —
+// covers BOTH a first-to-act node's actions (check/bet-small/bet-big) and a facing-a-bet node's
+// (fold/call/raise); a given node only ever populates one set, the other's percentages are 0.
+const STREET_ORDER: StreetAction[] = ['bet-big', 'raise', 'bet-small', 'call', 'check', 'fold']
 const PREFLOP_ORDER: PokerAction[] = ['allin', 'raise', 'call', 'fold']
 const FOLD_COLOR = '#1a1c24'
 
@@ -33,9 +36,9 @@ export default function SolvedActionGrid({ grid, activeHand, onHandActive, prefl
           const segments: { color: string; pct: number }[] = []
 
           if (cell) {
-            for (const a of ORDER) {
+            for (const a of STREET_ORDER) {
               const pct = cell.actions[a] ?? 0
-              if (pct > 0.001) segments.push({ color: POSTFLOP_ACTION_COLOR[a as keyof typeof POSTFLOP_ACTION_COLOR], pct })
+              if (pct > 0.001) segments.push({ color: STREET_ACTION_COLOR[a], pct })
             }
           } else if (preflopChart && preflopCellMode) {
             // Not part of this street's range — show what this hand actually did preflop instead

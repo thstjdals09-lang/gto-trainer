@@ -2,20 +2,11 @@ import type { ReactNode } from 'react'
 import { allCombosForHand } from '../engine/handEval'
 import { fromPackedCard, toPackedCard } from '../engine/solverBridge'
 import { getDisplayCell } from '../engine/chart'
-import type { InfosetStrategy, StreetAction } from '../engine/postflopSolver'
+import type { InfosetStrategy } from '../engine/postflopSolver'
 import type { CellMode } from '../engine/preflop'
-import { ACTION_COLOR, ACTION_LABEL, SUIT_COLOR, SUIT_SYMBOL } from '../theme'
+import { ACTION_COLOR, ACTION_LABEL, STREET_ACTION_COLOR, STREET_ACTION_LABEL, SUIT_COLOR, SUIT_SYMBOL } from '../theme'
 import type { Card, Chart, PokerAction } from '../types'
 
-const LABEL: Record<StreetAction, string> = { check: 'Check', 'bet-small': 'Bet 33%', 'bet-big': 'Bet 75%+', fold: 'Fold', call: 'Call', raise: 'Raise' }
-const COLOR: Record<StreetAction, string> = {
-  check: '#2b6cb0',
-  'bet-small': '#d4a72c',
-  'bet-big': '#dc2626',
-  fold: '#2b6cb0',
-  call: '#d4a72c',
-  raise: '#7f1d1d',
-}
 const PREFLOP_ACTION_ORDER: PokerAction[] = ['allin', 'raise', 'call', 'fold']
 
 interface Props {
@@ -129,7 +120,7 @@ export default function SolvedHandDetailPanel({ hand, combos, handNames, strateg
                   const ev = strategy.actionEV[a][i]
                   return (
                     <div key={a} className="grid grid-cols-[1fr_auto_auto] items-center gap-x-2">
-                      <span style={{ color: COLOR[a] }}>{LABEL[a]}</span>
+                      <span style={{ color: STREET_ACTION_COLOR[a] }}>{STREET_ACTION_LABEL[a]}</span>
                       <span className="text-right text-white/80 tabular-nums">{pct.toFixed(0)}%</span>
                       <span className="text-right text-white/40 tabular-nums">{ev.toFixed(1)}bb</span>
                     </div>
