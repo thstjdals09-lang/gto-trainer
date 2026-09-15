@@ -486,7 +486,7 @@ export default function App() {
                     combos={primaryCombos ?? []}
                     handNames={primaryHandNames ?? []}
                     strategy={primaryStrategy}
-                    rangeWeight={activeHand ? (isViewingOOP ? rangeA : rangeB)[activeHand] : undefined}
+                    board={currentBoardForDisplay}
                     potBB={streetState.potBB}
                   />
                 </div>
