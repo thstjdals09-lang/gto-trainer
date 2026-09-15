@@ -257,10 +257,14 @@ export default function App() {
     setSlotLog((prev) => Object.fromEntries(Object.entries(prev).filter(([k]) => keep(k))))
   }
 
-  function continuingRangeForSeat(seatIndex: number): Record<string, number> {
+  function lastPreflopSlotForSeat(seatIndex: number): DecisionSlot | undefined {
     const relevant = Object.values(slotLog).filter((s) => s.seatIndex === seatIndex)
-    if (relevant.length === 0) return {}
-    const last = relevant[relevant.length - 1]
+    return relevant[relevant.length - 1]
+  }
+
+  function continuingRangeForSeat(seatIndex: number): Record<string, number> {
+    const last = lastPreflopSlotForSeat(seatIndex)
+    if (!last) return {}
     const chosen = committed[last.id]?.action
     if (!chosen || chosen === 'fold') return {}
     const weights: Record<string, number> = {}
@@ -364,6 +368,7 @@ export default function App() {
     const primaryCombos = isViewingOOP ? solveResult?.oopCombos : solveResult?.ipCombos
     const primaryWeights = isViewingOOP ? solveResult?.oopWeights : solveResult?.ipWeights
     const primaryHandNames = isViewingOOP ? solveResult?.oopHandNames : solveResult?.ipHandNames
+    const viewedSeatLastPreflopSlot = lastPreflopSlotForSeat(activeSeat)
     const solvedGrid =
       thisSolveIsCurrent && primaryStrategy && primaryHandNames && primaryWeights
         ? aggregateStrategyToGrid(primaryHandNames, primaryWeights, primaryStrategy)
@@ -488,6 +493,8 @@ export default function App() {
                     strategy={primaryStrategy}
                     board={currentBoardForDisplay}
                     potBB={streetState.potBB}
+                    preflopChart={viewedSeatLastPreflopSlot?.chart}
+                    preflopCellMode={viewedSeatLastPreflopSlot?.cellMode}
                   />
                 </div>
               </div>
