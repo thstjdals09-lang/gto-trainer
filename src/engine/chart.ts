@@ -116,6 +116,19 @@ export function getDisplayCell(chart: Chart, hand: string, cellMode: 'raw' | 'ca
 
 const grid = generateHandGrid()
 
+/** The portion of a chart's range that takes one specific action, as a 169-hand weight map (0-100). */
+export function chartActionRange(chart: Chart, cellMode: 'raw' | 'callfold' | 'shovefold', action: PokerAction): Record<string, number> {
+  const weights: Record<string, number> = {}
+  for (const row of grid) {
+    for (const hand of row) {
+      const cell = getDisplayCell(chart, hand.name, cellMode)
+      const pct = (cell.weight * (cell.actions[action] ?? 0)) / 100
+      if (pct > 0.001) weights[hand.name] = pct
+    }
+  }
+  return weights
+}
+
 export interface ActionTotal {
   combos: number
   pct: number

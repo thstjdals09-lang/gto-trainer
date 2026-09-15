@@ -10,9 +10,11 @@ interface Props {
   hand: string | null
   chart: Chart
   cellMode: CellMode
+  /** hero's all-in showdown equity (0-1) vs the villain's implied range, if a specific villain exists for this decision. */
+  equity?: number
 }
 
-export default function HandDetailPanel({ hand, chart, cellMode }: Props) {
+export default function HandDetailPanel({ hand, chart, cellMode, equity }: Props) {
   if (!hand) {
     return (
       <div className="flex h-full min-h-[160px] items-center justify-center rounded-xl border border-white/10 bg-white/[0.02] text-sm text-white/30">
@@ -27,7 +29,10 @@ export default function HandDetailPanel({ hand, chart, cellMode }: Props) {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-sm font-semibold text-white/70">{hand}</div>
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm font-semibold text-white/70">{hand}</span>
+        {equity !== undefined && <span className="text-xs text-white/50">쇼다운 승률 {(equity * 100).toFixed(0)}%</span>}
+      </div>
       <div className="grid grid-cols-2 gap-2">
         {combos.map(([c1, c2], i) => (
           <div key={i} className="rounded-lg border border-white/10 bg-white/5 p-2">

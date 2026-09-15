@@ -32,6 +32,25 @@ export function buildRunouts(board: number[]): number[][] {
   return runouts
 }
 
+/** Randomly sampled runouts (Monte Carlo) — for preflop (5 cards to come), where exact
+ * enumeration (~1.5M boards) is infeasible. Reuses the same accumulateEquity as exact boards. */
+export function buildSampledRunouts(board: number[], cardsToCome: number, sampleCount: number): number[][] {
+  const remainingDeck = FULL_DECK.filter((c) => !board.includes(c))
+  const runouts: number[][] = []
+  for (let s = 0; s < sampleCount; s++) {
+    // Fisher-Yates partial shuffle to pick `cardsToCome` distinct cards
+    const pool = remainingDeck.slice()
+    const runout: number[] = []
+    for (let k = 0; k < cardsToCome; k++) {
+      const idx = Math.floor(Math.random() * (pool.length - k)) + k
+      ;[pool[k], pool[idx]] = [pool[idx], pool[k]]
+      runout.push(pool[k])
+    }
+    runouts.push(runout)
+  }
+  return runouts
+}
+
 export interface EquityAccumulators {
   wins: Float64Array
   ties: Float64Array

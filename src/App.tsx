@@ -14,6 +14,7 @@ import { preflopEndState, nextStreetState, type StreetState } from './engine/pot
 import { computeStreetFlow, traceStreetActions, type StreetCommitted, type StreetFlowResult } from './engine/postflopFlow'
 import { solveStreet, type StreetSolve } from './engine/solveOrchestrator'
 import { aggregateStrategyToGrid, aggregateGridTotals, aggregateEVTotals } from './engine/solverBridge'
+import { computePreflopEquity, type PreflopEquityResult } from './engine/preflopEquity'
 import type { SolveProgress } from './engine/equitySolverPool'
 import type { StreetAction } from './engine/postflopSolver'
 import { generateHandGrid, POSITIONS, type Card, type PokerAction, type StackDepth } from './types'
@@ -57,8 +58,22 @@ export default function App() {
   const [solveStatus, setSolveStatus] = useState<'idle' | 'solving' | 'done' | 'error'>('idle')
   const [solveProgress, setSolveProgress] = useState<SolveProgress | null>(null)
   const [solvedKey, setSolvedKey] = useState<string | null>(null)
+  const [preflopEquity, setPreflopEquity] = useState<PreflopEquityResult | null>(null)
 
   const flow = useMemo(() => (stack ? computeFlow(stack, committed) : null), [stack, committed])
+
+  const preflopSlot = flow && flow.status === 'awaiting' ? flow.slot : null
+  const preflopEquityKey = preflopSlot ? `${preflopSlot.scenario}|${preflopSlot.position}|${preflopSlot.villain ?? ''}|${stack}` : null
+
+  useEffect(() => {
+    if (!preflopSlot || !stack) {
+      setPreflopEquity(null)
+      return
+    }
+    const result = computePreflopEquity(preflopSlot.scenario, preflopSlot.position, preflopSlot.villain, stack, 80)
+    setPreflopEquity(result)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preflopEquityKey])
 
   const reachedFlop = !!(flow && flow.status === 'complete' && flow.result === 'flop')
 
@@ -306,13 +321,18 @@ export default function App() {
               {slot.villain ? ` vs ${slot.villain}` : ''}
             </h2>
           </div>
-          <ActionButtons slot={slot} onAction={(action, sizeBB) => handleAction(slot, action, sizeBB)} />
+          <ActionButtons slot={slot} onAction={(action, sizeBB) => handleAction(slot, action, sizeBB)} equity={preflopEquity} />
           <div className="flex flex-col sm:flex-row gap-4">
             <div className="sm:flex-1 sm:min-w-0">
               <RangeGrid chart={slot.chart} cellMode={slot.cellMode} activeHand={activeHand} onHandActive={setActiveHand} />
             </div>
             <div className="sm:w-64 sm:shrink-0">
-              <HandDetailPanel hand={activeHand} chart={slot.chart} cellMode={slot.cellMode} />
+              <HandDetailPanel
+                hand={activeHand}
+                chart={slot.chart}
+                cellMode={slot.cellMode}
+                equity={activeHand && preflopEquity ? preflopEquity.equityByHand[activeHand] : undefined}
+              />
             </div>
           </div>
         </div>
@@ -407,7 +427,11 @@ export default function App() {
 
             <div className="text-xs text-white/40">
               팟 {streetState.potBB.toFixed(1)}bb · 유효스택 {streetState.effStackBB.toFixed(1)}bb
-              {evTotals && <span className="ml-2 text-white/60">· 레인지 평균 EV {evTotals.rangeEV.toFixed(2)}bb</span>}
+              {evTotals && (
+                <span className="ml-2 text-white/60">
+                  · 레인지 평균 EV {evTotals.rangeEV.toFixed(2)}bb ({((evTotals.rangeEV / streetState.potBB) * 100).toFixed(0)}%)
+                </span>
+              )}
             </div>
 
             {solveStatus === 'solving' && (
@@ -441,7 +465,11 @@ export default function App() {
                       <span className="text-lg font-extrabold">{stat ? stat.pct.toFixed(1) : '—'}%</span>
                       <span className="text-[10px] text-white/70">{stat ? `${stat.combos.toFixed(0)} combos` : ''}</span>
                     </div>
-                    {ev !== undefined && <div className="mt-1 text-[11px] text-white/70">EV {ev.toFixed(2)}bb</div>}
+                    {ev !== undefined && (
+                      <div className="mt-1 text-[11px] text-white/70">
+                        EV {ev.toFixed(2)}bb ({((ev / streetState.potBB) * 100).toFixed(0)}%)
+                      </div>
+                    )}
                   </button>
                 )
               })}
@@ -453,7 +481,14 @@ export default function App() {
                   <SolvedActionGrid grid={solvedGrid} activeHand={activeHand} onHandActive={setActiveHand} />
                 </div>
                 <div className="sm:w-64 sm:shrink-0">
-                  <SolvedHandDetailPanel hand={activeHand} combos={primaryCombos ?? []} handNames={primaryHandNames ?? []} strategy={primaryStrategy} />
+                  <SolvedHandDetailPanel
+                    hand={activeHand}
+                    combos={primaryCombos ?? []}
+                    handNames={primaryHandNames ?? []}
+                    strategy={primaryStrategy}
+                    rangeWeight={activeHand ? (isViewingOOP ? rangeA : rangeB)[activeHand] : undefined}
+                    potBB={streetState.potBB}
+                  />
                 </div>
               </div>
             )}

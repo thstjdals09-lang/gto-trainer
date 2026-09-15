@@ -1,14 +1,41 @@
 import type { DecisionSlot } from '../engine/preflop'
-import { computeActionTotals } from '../engine/chart'
+import { computeActionTotals, getDisplayCell } from '../engine/chart'
+import type { PreflopEquityResult } from '../engine/preflopEquity'
 import { ACTION_COLOR, ACTION_LABEL } from '../theme'
-import type { PokerAction } from '../types'
+import { comboCount, generateHandGrid, type PokerAction } from '../types'
 
 interface Props {
   slot: DecisionSlot
   onAction: (action: PokerAction, sizeBB?: number) => void
+  equity?: PreflopEquityResult | null
 }
 
-export default function ActionButtons({ slot, onAction }: Props) {
+const grid = generateHandGrid()
+
+/** Weighted-average equity (0-1) across the combos that take one action, using the per-hand equity map. */
+function actionEquity(slot: DecisionSlot, action: PokerAction, equityByHand: Record<string, number>): number | undefined {
+  let wsum = 0
+  let esum = 0
+  for (const row of grid) {
+    for (const hand of row) {
+      const eq = equityByHand[hand.name]
+      if (eq === undefined) continue
+      const cell = getDisplayCell(slot.chart, hand.name, slot.cellMode)
+      const w = (comboCount(hand) * cell.weight * (cell.actions[action] ?? 0)) / 10000
+      if (w <= 0) continue
+      wsum += w
+      esum += w * eq
+    }
+  }
+  return wsum > 0 ? esum / wsum : undefined
+}
+
+function estimateEV(equity: number, sizeBB: number | undefined): number | undefined {
+  if (sizeBB === undefined) return undefined
+  return sizeBB * (2 * equity - 1)
+}
+
+export default function ActionButtons({ slot, onAction, equity }: Props) {
   const totals = computeActionTotals(slot.chart, slot.cellMode)
 
   return (
@@ -28,6 +55,8 @@ export default function ActionButtons({ slot, onAction }: Props) {
             sizeLabel = ` ${sizeBB}`
           }
           const total = totals[action]
+          const eq = equity && action !== 'fold' ? actionEquity(slot, action, equity.equityByHand) : undefined
+          const ev = eq !== undefined ? estimateEV(eq, sizeBB) : undefined
           return (
             <button
               key={action}
@@ -43,6 +72,11 @@ export default function ActionButtons({ slot, onAction }: Props) {
                 <span className="text-xl sm:text-2xl font-extrabold">{total.pct.toFixed(1)}%</span>
                 <span className="text-[10px] sm:text-xs text-white/70">{total.combos.toFixed(0)} combos</span>
               </div>
+              {eq !== undefined && (
+                <div className="mt-1 text-[11px] text-white/70">
+                  쇼다운 승률 {(eq * 100).toFixed(0)}%{ev !== undefined ? ` · EV ${ev.toFixed(2)}bb` : ''}
+                </div>
+              )}
             </button>
           )
         })}
