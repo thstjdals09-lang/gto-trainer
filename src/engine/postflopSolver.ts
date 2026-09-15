@@ -2,21 +2,24 @@ import type { EquityMatrix } from './equity'
 
 export type StreetAction = 'check' | 'bet-small' | 'bet-big' | 'fold' | 'call' | 'raise'
 
-interface DecisionNode {
+export interface DecisionNode {
   kind: 'decision'
   id: string
   actor: 'oop' | 'ip'
   actions: StreetAction[]
   children: Partial<Record<StreetAction, TreeNode>>
+  /** Each player's total street investment already committed at this decision point (before the actor's own choice here). */
+  oopInvested: number
+  ipInvested: number
 }
-interface TerminalNode {
+export interface TerminalNode {
   kind: 'terminal'
   type: 'fold' | 'showdown'
   foldedPlayer?: 'oop' | 'ip'
   oopInvested: number
   ipInvested: number
 }
-type TreeNode = DecisionNode | TerminalNode
+export type TreeNode = DecisionNode | TerminalNode
 
 export interface SolverInput {
   heroCombos: number[][] // OOP
@@ -69,7 +72,9 @@ function buildTree(pot: number, effStack: number): TreeNode {
           ? facingBet(`${id}-r`, 'ip', villainInvested, raiseTotal)
           : facingBet(`${id}-r`, 'oop', villainInvested, raiseTotal)
     }
-    return { kind: 'decision', id, actor, actions, children }
+    const oopInvested = actor === 'oop' ? priorInvested : villainInvested
+    const ipInvested = actor === 'oop' ? villainInvested : priorInvested
+    return { kind: 'decision', id, actor, actions, children, oopInvested, ipInvested }
   }
 
   function firstIn(id: string, actor: 'oop' | 'ip', priorInvested: number, potNow: number): TreeNode {
@@ -79,7 +84,15 @@ function buildTree(pot: number, effStack: number): TreeNode {
     const children: Partial<Record<StreetAction, TreeNode>> = {}
 
     if (actor === 'oop') {
-      children.check = { kind: 'decision', id: `${id}-x`, actor: 'ip', actions: ['check'], children: { check: showdown(priorInvested, priorInvested) } }
+      children.check = {
+        kind: 'decision',
+        id: `${id}-x`,
+        actor: 'ip',
+        actions: ['check'],
+        children: { check: showdown(priorInvested, priorInvested) },
+        oopInvested: priorInvested,
+        ipInvested: priorInvested,
+      }
       // IP's check-back option, or IP bets after OOP checks
       const ipNode = children.check as DecisionNode
       const ipSmall = Math.min(effStack, priorInvested + potNow * BET_SMALL_FRAC)
@@ -104,7 +117,7 @@ function buildTree(pot: number, effStack: number): TreeNode {
       actions.push('bet-big')
       children['bet-big'] = facingBet(`${id}-bb`, actor === 'oop' ? 'ip' : 'oop', priorInvested, big)
     }
-    return { kind: 'decision', id, actor, actions, children }
+    return { kind: 'decision', id, actor, actions, children, oopInvested: priorInvested, ipInvested: priorInvested }
   }
 
   return firstIn('root', 'oop', 0, pot)

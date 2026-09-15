@@ -25,20 +25,12 @@ export function preflopEndState(seatA: number, seatB: number, history: HistoryEn
   }
 }
 
-/**
- * Advances pot/stack across a street given the single representative action the user picked
- * (this app shows one action for the whole street rather than simulating both sides' full
- * response) — check assumes the street closes with no more money in; a bet assumes it gets
- * called, matching the "pot after a bet-and-call" pot-fraction convention already used for
- * sizing (33%/75% of pot).
- */
-export function advanceStreet(state: StreetState, action: 'check' | 'bet-small' | 'bet-big'): StreetState {
-  if (action === 'check') return state
-  const frac = action === 'bet-small' ? 0.33 : 0.75
-  const invested = Math.min(state.effStackBB, state.potBB * frac)
+/** Pot/stack entering the next street, from the actual amounts both players put in this street
+ * (the street's resolved showdown terminal) — not a guess about whether a bet gets called. */
+export function nextStreetState(state: StreetState, oopInvested: number, ipInvested: number): StreetState {
   return {
-    potBB: state.potBB + 2 * invested,
-    effStackBB: state.effStackBB - invested,
+    potBB: state.potBB + oopInvested + ipInvested,
+    effStackBB: state.effStackBB - Math.max(oopInvested, ipInvested),
   }
 }
 

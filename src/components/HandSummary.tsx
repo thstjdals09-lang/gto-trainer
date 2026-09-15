@@ -18,18 +18,21 @@ export interface PreflopLine {
   auto?: boolean
 }
 
-export interface StreetLine {
+export interface StreetActionLine {
+  position: string
+  action: string
+  sizeBB?: number
+}
+
+export interface StreetSection {
   label: string
   board: Card[]
-  position?: string
-  action?: string
-  sizeBB?: number
-  potAfter?: number
+  actions: StreetActionLine[]
 }
 
 interface Props {
   preflop: PreflopLine[]
-  streets: StreetLine[]
+  streets: StreetSection[]
   resultLabel?: string
 }
 
@@ -63,16 +66,17 @@ export default function HandSummary({ preflop, streets, resultLabel }: Props) {
           <div className="text-xs text-white/40 mb-1.5">
             {s.label} — {s.board.map(cardStr).join(' ')}
           </div>
-          {s.position && s.action && (
-            <div className="flex items-center gap-2 text-white/80">
-              <span className="w-12 shrink-0 font-semibold text-white">{s.position}</span>
-              <span className={ACTION_COLOR[s.action] ?? 'text-white/60'}>
-                {ACTION_LABEL[s.action] ?? s.action}
-                {s.sizeBB ? ` ${s.sizeBB.toFixed(1)}bb` : ''}
-              </span>
-              {s.potAfter !== undefined && <span className="text-[10px] text-white/30">팟 {s.potAfter.toFixed(1)}bb</span>}
-            </div>
-          )}
+          <div className="flex flex-col gap-1">
+            {s.actions.map((a, j) => (
+              <div key={j} className="flex items-center gap-2 text-white/80">
+                <span className="w-12 shrink-0 font-semibold text-white">{a.position}</span>
+                <span className={ACTION_COLOR[a.action] ?? 'text-white/60'}>
+                  {ACTION_LABEL[a.action] ?? a.action}
+                  {a.sizeBB ? ` ${a.sizeBB.toFixed(1)}bb` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       ))}
 
