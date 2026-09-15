@@ -41,3 +41,10 @@ export function advanceStreet(state: StreetState, action: 'check' | 'bet-small' 
     effStackBB: state.effStackBB - invested,
   }
 }
+
+/** The bet size (bb) a bet-small/bet-big action represents at a given street state; undefined for check. */
+export function streetActionSizeBB(state: StreetState, action: 'check' | 'bet-small' | 'bet-big'): number | undefined {
+  if (action === 'check') return undefined
+  const frac = action === 'bet-small' ? 0.33 : 0.75
+  return Math.min(state.effStackBB, state.potBB * frac)
+}

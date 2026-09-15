@@ -114,6 +114,10 @@ export interface InfosetStrategy {
   actions: StreetAction[]
   /** strategy[action][comboIndex] = probability, time-averaged over CFR iterations. */
   strategy: Record<StreetAction, Float64Array>
+  /** EV in bb (this street, from the acting player's own perspective) of taking each action, per combo — under the final averaged strategy, not a raw CFR-iteration snapshot. */
+  actionEV: Record<StreetAction, Float64Array>
+  /** EV in bb per combo under the node's overall mixed (averaged) strategy. */
+  nodeEV: Float64Array
 }
 
 export interface SolveResult {
@@ -173,6 +177,59 @@ export function solvePostflop(input: SolverInput, equity: EquityMatrix, iteratio
     return info
   }
 
+  /** Terminal payoff, shared by the CFR loop and the final EV pass so they can never disagree. */
+  function terminalValue(node: TerminalNode, id: string, oopRange: Float64Array, ipRange: Float64Array): { valOOP: Float64Array; valIP: Float64Array } {
+    const valOOP = bufs.get(`${id}:valOOP`, H)
+    const valIP = bufs.get(`${id}:valIP`, V)
+    const finalPot = input.potBeforeStreet + node.oopInvested + node.ipInvested
+    if (node.type === 'fold') {
+      const oopVal = node.foldedPlayer === 'oop' ? -node.oopInvested : finalPot - node.oopInvested
+      const ipVal = node.foldedPlayer === 'ip' ? -node.ipInvested : finalPot - node.ipInvested
+      valOOP.fill(oopVal)
+      valIP.fill(ipVal)
+      return { valOOP, valIP }
+    }
+    let ipTotal = 0
+    for (let v = 0; v < V; v++) ipTotal += ipRange[v]
+    let oopTotal = 0
+    for (let h = 0; h < H; h++) oopTotal += oopRange[h]
+    const { matrix } = equity
+    valOOP.fill(0)
+    valIP.fill(0)
+    if (ipTotal > 1e-12) {
+      for (let h = 0; h < H; h++) {
+        let acc = 0
+        let wsum = 0
+        const rowBase = h * V
+        for (let v = 0; v < V; v++) {
+          const w = ipRange[v]
+          if (w <= 0) continue
+          const eq = matrix[rowBase + v]
+          if (Number.isNaN(eq)) continue
+          acc += w * eq
+          wsum += w
+        }
+        valOOP[h] = wsum > 1e-12 ? (acc / wsum) * finalPot - node.oopInvested : -node.oopInvested
+      }
+    }
+    if (oopTotal > 1e-12) {
+      for (let v = 0; v < V; v++) {
+        let acc = 0
+        let wsum = 0
+        for (let h = 0; h < H; h++) {
+          const w = oopRange[h]
+          if (w <= 0) continue
+          const eq = matrix[h * V + v]
+          if (Number.isNaN(eq)) continue
+          acc += w * (1 - eq)
+          wsum += w
+        }
+        valIP[v] = wsum > 1e-12 ? (acc / wsum) * finalPot - node.ipInvested : -node.ipInvested
+      }
+    }
+    return { valOOP, valIP }
+  }
+
   function currentStrategy(node: DecisionNode, reach: Float64Array): Record<StreetAction, Float64Array> {
     const info = getInfoset(node)
     const n = reach.length
@@ -201,60 +258,10 @@ export function solvePostflop(input: SolverInput, equity: EquityMatrix, iteratio
   }
 
   function evalNode(node: TreeNode, id: string, oopRange: Float64Array, ipRange: Float64Array): { valOOP: Float64Array; valIP: Float64Array } {
+    if (node.kind === 'terminal') return terminalValue(node, id, oopRange, ipRange)
+
     const valOOP = bufs.get(`${id}:valOOP`, H)
     const valIP = bufs.get(`${id}:valIP`, V)
-
-    if (node.kind === 'terminal') {
-      const finalPot = input.potBeforeStreet + node.oopInvested + node.ipInvested
-      if (node.type === 'fold') {
-        const oopVal = node.foldedPlayer === 'oop' ? -node.oopInvested : finalPot - node.oopInvested
-        const ipVal = node.foldedPlayer === 'ip' ? -node.ipInvested : finalPot - node.ipInvested
-        valOOP.fill(oopVal)
-        valIP.fill(ipVal)
-        return { valOOP, valIP }
-      }
-      // showdown: weight opponent's range-at-node as a probability distribution
-      let ipTotal = 0
-      for (let v = 0; v < V; v++) ipTotal += ipRange[v]
-      let oopTotal = 0
-      for (let h = 0; h < H; h++) oopTotal += oopRange[h]
-      const { matrix } = equity
-      valOOP.fill(0)
-      valIP.fill(0)
-      if (ipTotal > 1e-12) {
-        for (let h = 0; h < H; h++) {
-          let acc = 0
-          let wsum = 0
-          const rowBase = h * V
-          for (let v = 0; v < V; v++) {
-            const w = ipRange[v]
-            if (w <= 0) continue
-            const eq = matrix[rowBase + v]
-            if (Number.isNaN(eq)) continue
-            acc += w * eq
-            wsum += w
-          }
-          valOOP[h] = wsum > 1e-12 ? (acc / wsum) * finalPot - node.oopInvested : -node.oopInvested
-        }
-      }
-      if (oopTotal > 1e-12) {
-        for (let v = 0; v < V; v++) {
-          let acc = 0
-          let wsum = 0
-          for (let h = 0; h < H; h++) {
-            const w = oopRange[h]
-            if (w <= 0) continue
-            const eq = matrix[h * V + v]
-            if (Number.isNaN(eq)) continue
-            acc += w * (1 - eq)
-            wsum += w
-          }
-          valIP[v] = wsum > 1e-12 ? (acc / wsum) * finalPot - node.ipInvested : -node.ipInvested
-        }
-      }
-      return { valOOP, valIP }
-    }
-
     const actingRange = node.actor === 'oop' ? oopRange : ipRange
     const strat = currentStrategy(node, actingRange)
     valOOP.fill(0)
@@ -338,8 +345,8 @@ export function solvePostflop(input: SolverInput, equity: EquityMatrix, iteratio
     evalNode(tree, 'root', oopPrior, ipPrior)
   }
 
-  function finalizeStrategies(map: Map<string, Infoset>): Map<string, InfosetStrategy> {
-    const out = new Map<string, InfosetStrategy>()
+  function finalizeStrategies(map: Map<string, Infoset>): Map<string, Omit<InfosetStrategy, 'actionEV' | 'nodeEV'>> {
+    const out = new Map<string, Omit<InfosetStrategy, 'actionEV' | 'nodeEV'>>()
     for (const [id, info] of map) {
       const n = info.strategySum[info.actions[0]].length
       const total = new Float64Array(n)
@@ -359,7 +366,95 @@ export function solvePostflop(input: SolverInput, equity: EquityMatrix, iteratio
     return out
   }
 
-  return { oopStrategy: finalizeStrategies(oopInfosets), ipStrategy: finalizeStrategies(ipInfosets), iterations }
+  const oopFinal = finalizeStrategies(oopInfosets)
+  const ipFinal = finalizeStrategies(ipInfosets)
+
+  // Second pass: replay the tree once more using the FINAL averaged strategy (not the noisy
+  // last-iteration regret-matched one) with fresh buffers, to get the converged EV per combo
+  // per action — this is what "EV" should mean, not a snapshot of an unconverged iteration.
+  const evBufs = new BufferPool()
+  function evalFinalEV(node: TreeNode, id: string, oopRange: Float64Array, ipRange: Float64Array): { valOOP: Float64Array; valIP: Float64Array } {
+    if (node.kind === 'terminal') {
+      const valOOP = evBufs.get(`${id}:valOOP`, H)
+      const valIP = evBufs.get(`${id}:valIP`, V)
+      const tmp = terminalValue(node, `ev:${id}`, oopRange, ipRange)
+      valOOP.set(tmp.valOOP)
+      valIP.set(tmp.valIP)
+      return { valOOP, valIP }
+    }
+    const map = node.actor === 'oop' ? oopFinal : ipFinal
+    const strategy = map.get(node.id)!.strategy
+    const valOOP = evBufs.get(`${id}:valOOP`, H)
+    const valIP = evBufs.get(`${id}:valIP`, V)
+    valOOP.fill(0)
+    valIP.fill(0)
+
+    const actingRange = node.actor === 'oop' ? oopRange : ipRange
+    let actingTotal = 0
+    for (let i = 0; i < actingRange.length; i++) actingTotal += actingRange[i]
+
+    const childVals: { valOOP: Float64Array; valIP: Float64Array }[] = []
+    const avgActionProb: number[] = []
+    for (let ai = 0; ai < node.actions.length; ai++) {
+      const a = node.actions[ai]
+      const s = strategy[a]
+      let childOopRange = oopRange
+      let childIpRange = ipRange
+      if (node.actor === 'oop') {
+        const next = evBufs.get(`${id}:child:${a}:oop`, H)
+        for (let h = 0; h < H; h++) next[h] = oopRange[h] * s[h]
+        childOopRange = next
+      } else {
+        const next = evBufs.get(`${id}:child:${a}:ip`, V)
+        for (let v = 0; v < V; v++) next[v] = ipRange[v] * s[v]
+        childIpRange = next
+      }
+      const child = evalFinalEV(node.children[a]!, `${id}-${a}`, childOopRange, childIpRange)
+      childVals.push(child)
+      let probSum = 0
+      for (let i = 0; i < actingRange.length; i++) probSum += actingRange[i] * s[i]
+      avgActionProb.push(actingTotal > 1e-12 ? probSum / actingTotal : 1 / node.actions.length)
+    }
+
+    // store per-action EV (the acting player's own perspective) on their infoset
+    const actionEV = {} as Record<StreetAction, Float64Array>
+    for (let ai = 0; ai < node.actions.length; ai++) {
+      const a = node.actions[ai]
+      actionEV[a] = node.actor === 'oop' ? childVals[ai].valOOP.slice() : childVals[ai].valIP.slice()
+    }
+    ;(map.get(node.id) as InfosetStrategy).actionEV = actionEV
+
+    if (node.actor === 'oop') {
+      for (let ai = 0; ai < node.actions.length; ai++) {
+        const s = strategy[node.actions[ai]]
+        const cv = childVals[ai].valOOP
+        for (let h = 0; h < H; h++) valOOP[h] += s[h] * cv[h]
+      }
+      for (let ai = 0; ai < node.actions.length; ai++) {
+        const p = avgActionProb[ai]
+        const cv = childVals[ai].valIP
+        for (let v = 0; v < V; v++) valIP[v] += p * cv[v]
+      }
+      ;(map.get(node.id) as InfosetStrategy).nodeEV = valOOP.slice()
+    } else {
+      for (let ai = 0; ai < node.actions.length; ai++) {
+        const s = strategy[node.actions[ai]]
+        const cv = childVals[ai].valIP
+        for (let v = 0; v < V; v++) valIP[v] += s[v] * cv[v]
+      }
+      for (let ai = 0; ai < node.actions.length; ai++) {
+        const p = avgActionProb[ai]
+        const cv = childVals[ai].valOOP
+        for (let h = 0; h < H; h++) valOOP[h] += p * cv[h]
+      }
+      ;(map.get(node.id) as InfosetStrategy).nodeEV = valIP.slice()
+    }
+
+    return { valOOP, valIP }
+  }
+  evalFinalEV(tree, 'evroot', oopPrior, ipPrior)
+
+  return { oopStrategy: oopFinal as Map<string, InfosetStrategy>, ipStrategy: ipFinal as Map<string, InfosetStrategy>, iterations }
 }
 
 export { buildTree }

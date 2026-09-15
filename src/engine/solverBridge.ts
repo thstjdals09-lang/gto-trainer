@@ -14,6 +14,13 @@ export function toPackedBoard(board: Card[]): number[] {
   return board.map(toPackedCard)
 }
 
+const RANK_CHAR: Record<number, Rank> = { 14: 'A', 13: 'K', 12: 'Q', 11: 'J', 10: 'T', 9: '9', 8: '8', 7: '7', 6: '6', 5: '5', 4: '4', 3: '3', 2: '2' }
+const SUIT_CHAR: Suit[] = ['s', 'h', 'd', 'c']
+
+export function fromPackedCard(packed: number): Card {
+  return { rank: RANK_CHAR[packed >> 2], suit: SUIT_CHAR[packed & 3] }
+}
+
 const grid = generateHandGrid()
 
 /**
@@ -88,6 +95,35 @@ export function aggregateStrategyToGrid(
     out[hand] = { weight: (totalW / n) * 100, combos: n, actions }
   }
   return out
+}
+
+export interface EVTotals {
+  rangeEV: number // weighted-average EV (bb) of the whole range under its solved mixed strategy
+  actionEV: Partial<Record<StreetAction, number>> // weighted-average EV (bb) of each action, across combos that can take it
+}
+
+/** Weighted-average EV (bb) — overall range EV and per-action EV — from the per-combo solved values. */
+export function aggregateEVTotals(priorWeights: number[], strategy: InfosetStrategy): EVTotals {
+  let wSum = 0
+  let evSum = 0
+  const actionWSum: Partial<Record<StreetAction, number>> = {}
+  const actionEVSum: Partial<Record<StreetAction, number>> = {}
+  for (let i = 0; i < priorWeights.length; i++) {
+    const w = priorWeights[i]
+    if (w <= 0) continue
+    wSum += w
+    evSum += w * strategy.nodeEV[i]
+    for (const a of strategy.actions) {
+      actionWSum[a] = (actionWSum[a] ?? 0) + w
+      actionEVSum[a] = (actionEVSum[a] ?? 0) + w * strategy.actionEV[a][i]
+    }
+  }
+  const actionEV: Partial<Record<StreetAction, number>> = {}
+  for (const a of strategy.actions) {
+    const aw = actionWSum[a] ?? 0
+    actionEV[a] = aw > 0 ? (actionEVSum[a] ?? 0) / aw : 0
+  }
+  return { rangeEV: wSum > 0 ? evSum / wSum : 0, actionEV }
 }
 
 export function aggregateGridTotals(grid: Record<string, GridCellStrategy>): Partial<Record<StreetAction, { pct: number; combos: number }>> {

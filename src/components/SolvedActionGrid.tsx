@@ -5,13 +5,15 @@ import { generateHandGrid } from '../types'
 
 interface Props {
   grid: Record<string, GridCellStrategy>
+  activeHand?: string | null
+  onHandActive?: (hand: string) => void
 }
 
 const handGrid = generateHandGrid()
 const ORDER: StreetAction[] = ['bet-big', 'bet-small', 'check']
 const FOLD_COLOR = '#1a1c24'
 
-export default function SolvedActionGrid({ grid }: Props) {
+export default function SolvedActionGrid({ grid, activeHand, onHandActive }: Props) {
   return (
     <div
       className="grid gap-[2px] w-full select-none"
@@ -32,7 +34,11 @@ export default function SolvedActionGrid({ grid }: Props) {
             <div
               key={hand.name}
               title={hand.name}
-              className="relative flex overflow-hidden rounded-[2px] text-[6px] xs:text-[7px] sm:text-[9px] font-medium text-white/90"
+              onMouseEnter={() => onHandActive?.(hand.name)}
+              onClick={() => onHandActive?.(hand.name)}
+              className={`relative flex overflow-hidden rounded-[2px] text-[6px] xs:text-[7px] sm:text-[9px] font-medium text-white/90 cursor-pointer ${
+                activeHand === hand.name ? 'ring-2 ring-white' : ''
+              }`}
               style={{ background: FOLD_COLOR, opacity: inRange ? 1 : 0.15 }}
             >
               {segments.map((seg, i) => (

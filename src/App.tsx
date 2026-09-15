@@ -6,11 +6,13 @@ import RangeGrid from './components/RangeGrid'
 import BoardPicker from './components/BoardPicker'
 import SolvedActionGrid from './components/SolvedActionGrid'
 import HandDetailPanel from './components/HandDetailPanel'
+import SolvedHandDetailPanel from './components/SolvedHandDetailPanel'
+import HandSummary, { type PreflopLine, type StreetLine } from './components/HandSummary'
 import { computeFlow, type Committed, type DecisionSlot } from './engine/preflop'
 import { getDisplayCell } from './engine/chart'
-import { preflopEndState, advanceStreet, type StreetState } from './engine/potTracking'
+import { preflopEndState, advanceStreet, streetActionSizeBB, type StreetState } from './engine/potTracking'
 import { solveStreet, type StreetSolve } from './engine/solveOrchestrator'
-import { aggregateStrategyToGrid, aggregateGridTotals } from './engine/solverBridge'
+import { aggregateStrategyToGrid, aggregateGridTotals, aggregateEVTotals } from './engine/solverBridge'
 import type { SolveProgress } from './engine/equitySolverPool'
 import type { StreetAction } from './engine/postflopSolver'
 import { generateHandGrid, POSITIONS, type Card, type PokerAction, type StackDepth } from './types'
@@ -33,7 +35,9 @@ export default function App() {
   const [flopPick, setFlopPick] = useState<Card[]>([])
   const [turnPick, setTurnPick] = useState<Card[]>([])
   const [riverPick, setRiverPick] = useState<Card[]>([])
-  const [postflopActions, setPostflopActions] = useState<Partial<Record<'flop' | 'turn' | 'river', 'check' | 'bet-small' | 'bet-big'>>>({})
+  const [postflopActions, setPostflopActions] = useState<
+    Partial<Record<'flop' | 'turn' | 'river', { action: 'check' | 'bet-small' | 'bet-big'; seatIndex: number }>>
+  >({})
   const [viewSeat, setViewSeat] = useState<0 | 1>(0)
   const [activeHand, setActiveHand] = useState<string | null>(null)
   const [solveResult, setSolveResult] = useState<StreetSolve | null>(null)
@@ -71,11 +75,50 @@ export default function App() {
   const streetReady =
     reachedFlop && ((street === 'flop' && flopDone) || (street === 'turn' && turnDone) || (street === 'river' && riverDone))
 
-  let streetState: StreetState = { potBB: 0, effStackBB: 0 }
-  if (reachedFlop && stack) {
-    streetState = preflopEndState(seatA, seatB, flow!.status === 'complete' ? flow!.history : [], stack)
-    if (postflopActions.flop) streetState = advanceStreet(streetState, postflopActions.flop)
-    if (postflopActions.turn) streetState = advanceStreet(streetState, postflopActions.turn)
+  const preflopEnd: StreetState =
+    reachedFlop && stack ? preflopEndState(seatA, seatB, flow!.status === 'complete' ? flow!.history : [], stack) : { potBB: 0, effStackBB: 0 }
+  const afterFlop = postflopActions.flop ? advanceStreet(preflopEnd, postflopActions.flop.action) : null
+  const afterTurn = afterFlop && postflopActions.turn ? advanceStreet(afterFlop, postflopActions.turn.action) : null
+  const afterRiver = afterTurn && postflopActions.river ? advanceStreet(afterTurn, postflopActions.river.action) : null
+  const streetState: StreetState = afterTurn ?? afterFlop ?? preflopEnd
+
+  const preflopLines: PreflopLine[] = (flow?.history ?? []).map((h) => ({
+    position: POSITIONS[h.seatIndex],
+    action: h.action,
+    sizeBB: h.sizeBB,
+    auto: h.auto,
+  }))
+
+  const streetLines: StreetLine[] = []
+  if (postflopActions.flop) {
+    streetLines.push({
+      label: '플랍',
+      board: flopPick,
+      position: POSITIONS[postflopActions.flop.seatIndex],
+      action: postflopActions.flop.action,
+      sizeBB: streetActionSizeBB(preflopEnd, postflopActions.flop.action),
+      potAfter: afterFlop?.potBB,
+    })
+  }
+  if (postflopActions.turn && afterFlop) {
+    streetLines.push({
+      label: '턴',
+      board: turnPick,
+      position: POSITIONS[postflopActions.turn.seatIndex],
+      action: postflopActions.turn.action,
+      sizeBB: streetActionSizeBB(afterFlop, postflopActions.turn.action),
+      potAfter: afterTurn?.potBB,
+    })
+  }
+  if (postflopActions.river && afterTurn) {
+    streetLines.push({
+      label: '리버',
+      board: riverPick,
+      position: POSITIONS[postflopActions.river.seatIndex],
+      action: postflopActions.river.action,
+      sizeBB: streetActionSizeBB(afterTurn, postflopActions.river.action),
+      potAfter: afterRiver?.potBB,
+    })
   }
 
   const boardKey = currentBoardForDisplay.map((c) => c.rank + c.suit).join(',')
@@ -187,6 +230,7 @@ export default function App() {
           <div className="text-lg font-semibold text-white mb-2">핸드 종료</div>
           <div className="text-white/60">{label}</div>
         </div>
+        <HandSummary preflop={preflopLines} streets={[]} />
         <button onClick={reset} className="self-center rounded-lg bg-violet-600 hover:bg-violet-500 px-6 py-3 font-semibold text-white">
           새 핸드
         </button>
@@ -251,6 +295,7 @@ export default function App() {
         ? solveResult!.result.oopStrategy.get('root')
         : solveResult!.result.ipStrategy.get('root-x')
       : undefined
+    const primaryCombos = isViewingOOP ? solveResult?.oopCombos : solveResult?.ipCombos
     const primaryWeights = isViewingOOP ? solveResult?.oopWeights : solveResult?.ipWeights
     const primaryHandNames = isViewingOOP ? solveResult?.oopHandNames : solveResult?.ipHandNames
     const solvedGrid =
@@ -258,10 +303,11 @@ export default function App() {
         ? aggregateStrategyToGrid(primaryHandNames, primaryWeights, primaryStrategy)
         : null
     const solvedTotals = solvedGrid ? aggregateGridTotals(solvedGrid) : null
+    const evTotals = thisSolveIsCurrent && primaryStrategy && primaryWeights ? aggregateEVTotals(primaryWeights, primaryStrategy) : null
     const availableActions = primaryStrategy?.actions ?? (['check', 'bet-small', 'bet-big'] as const)
 
     return (
-      <div className="mx-auto max-w-3xl px-3 py-6 flex flex-col gap-4">
+      <div className="mx-auto max-w-5xl px-3 py-6 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div className="text-sm text-white/50">유효스택 {stack}bb · 플랍으로 진행 ({POSITIONS[seatA]} vs {POSITIONS[seatB]})</div>
           <button onClick={reset} className="text-xs text-white/40 hover:text-white/70 underline">
@@ -323,6 +369,7 @@ export default function App() {
 
             <div className="text-xs text-white/40">
               팟 {streetState.potBB.toFixed(1)}bb · 유효스택 {streetState.effStackBB.toFixed(1)}bb
+              {evTotals && <span className="ml-2 text-white/60">· 레인지 평균 EV {evTotals.rangeEV.toFixed(2)}bb</span>}
             </div>
 
             {solveStatus === 'solving' && (
@@ -345,13 +392,14 @@ export default function App() {
                 .filter((a): a is 'check' | 'bet-small' | 'bet-big' => a === 'check' || a === 'bet-small' || a === 'bet-big')
                 .map((a) => {
                   const stat = solvedTotals?.[a]
+                  const ev = evTotals?.actionEV[a]
                   return (
                     <button
                       key={a}
                       disabled={!solvedGrid}
-                      onClick={() => setPostflopActions((prev) => ({ ...prev, [street]: a }))}
+                      onClick={() => setPostflopActions((prev) => ({ ...prev, [street]: { action: a, seatIndex: activeSeat } }))}
                       className={`sm:flex-1 sm:min-w-[110px] rounded-lg px-3 py-3 text-left text-white transition-colors disabled:opacity-40 ${POSTFLOP_COLOR[a]} ${
-                        postflopActions[street] === a ? 'ring-2 ring-white' : ''
+                        postflopActions[street]?.action === a ? 'ring-2 ring-white' : ''
                       }`}
                     >
                       <div className="text-sm font-bold">{POSTFLOP_LABEL[a]}</div>
@@ -359,22 +407,35 @@ export default function App() {
                         <span className="text-lg font-extrabold">{stat ? stat.pct.toFixed(1) : '—'}%</span>
                         <span className="text-[10px] text-white/70">{stat ? `${stat.combos.toFixed(0)} combos` : ''}</span>
                       </div>
+                      {ev !== undefined && <div className="mt-1 text-[11px] text-white/70">EV {ev.toFixed(2)}bb</div>}
                     </button>
                   )
                 })}
             </div>
 
-            {solvedGrid && <SolvedActionGrid grid={solvedGrid} />}
+            {solvedGrid && (
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="sm:flex-1 sm:min-w-0">
+                  <SolvedActionGrid grid={solvedGrid} activeHand={activeHand} onHandActive={setActiveHand} />
+                </div>
+                <div className="sm:w-64 sm:shrink-0">
+                  <SolvedHandDetailPanel hand={activeHand} combos={primaryCombos ?? []} handNames={primaryHandNames ?? []} strategy={primaryStrategy} />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {street === 'done' && (
-          <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center">
-            <div className="text-lg font-semibold text-white mb-2">핸드 완료</div>
-            <div className="text-white/60 text-sm">
-              보드: {currentBoardForDisplay.map((c) => `${c.rank}${c.suit}`).join(' ')}
+          <div className="flex flex-col gap-4">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-center">
+              <div className="text-lg font-semibold text-white mb-2">핸드 완료</div>
+              <div className="text-white/60 text-sm">
+                보드: {currentBoardForDisplay.map((c) => `${c.rank}${c.suit}`).join(' ')}
+              </div>
             </div>
-            <button onClick={reset} className="mt-4 rounded-lg bg-violet-600 hover:bg-violet-500 px-6 py-3 font-semibold text-white">
+            <HandSummary preflop={preflopLines} streets={streetLines} />
+            <button onClick={reset} className="self-center rounded-lg bg-violet-600 hover:bg-violet-500 px-6 py-3 font-semibold text-white">
               새 핸드
             </button>
           </div>
